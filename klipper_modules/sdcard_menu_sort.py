@@ -1,5 +1,9 @@
-# Sort the LCD SD-card file list by modification time (newest first) and
-# navigate into subdirectories from the LCD.
+# Extends the LCD menus:
+#   - Sort the SD-card file list by modification time (newest first) and
+#     navigate into subdirectories from the LCD.
+#   - Register a "Cancel Object" list menu type ("exclobjlist") that lists
+#     print objects and excludes the selected one on click, with the
+#     currently printing object shown at the top.
 #
 # Install: copy this file to the host's klippy/extras/ directory
 #   (e.g. /home/pi/klipper/klippy/extras/sdcard_menu_sort.py)
@@ -52,6 +56,49 @@ def _make_print_cb(relpath):
     return _cb
 
 
+_orig_key_event = menu_mod.MenuManager.key_event
+
+_speed_opts = {'step': 0.01, 'fast_step': 0.25, 'min': 0.1, 'max': 5.0,
+               'deadzone': 3, 'deadzone_timeout': 0.5}
+
+
+def _adjust_speed(manager, key):
+    try:
+        step = (_speed_opts['fast_step'] if key.startswith('fast')
+                else _speed_opts['step'])
+        gcmd = manager.printer.lookup_object('gcode_move')
+        factor = gcmd.get_status()['speed_factor']
+        if key.endswith('down'):
+            factor += step
+        else:
+            factor -= step
+        factor = max(_speed_opts['min'], min(_speed_opts['max'], factor))
+        manager.queue_gcode("M220 S%d" % round(factor * 100))
+    except Exception:
+        logging.exception("sdcard_menu_sort: speed adjust failed")
+
+
+def _key_event(self, key, eventtime):
+    if key in ('up', 'down', 'fast_up', 'fast_down') and not self.running:
+        try:
+            state = self.printer.lookup_object('idle_timeout').state
+        except Exception:
+            state = None
+        if state == 'Printing':
+            direction = 'down' if key.endswith('down') else 'up'
+            dz = getattr(self, '_speed_deadzone', None)
+            if (dz is None or dz[0] != direction
+                    or eventtime - dz[2] > _speed_opts['deadzone_timeout']):
+                dz = (direction, 0, eventtime)
+            self._speed_deadzone = (direction, dz[1] + 1, eventtime)
+            if self._speed_deadzone[1] > _speed_opts['deadzone']:
+                _adjust_speed(self, key)
+            self.display.request_redraw()
+            return
+    self._speed_deadzone = None
+    return _orig_key_event(self, key, eventtime)
+
+
 class FolderMenu(menu_mod.MenuList):
     def __init__(self, manager, config, **kwargs):
         super(FolderMenu, self).__init__(manager, config, **kwargs)
@@ -102,11 +149,64 @@ def _populate_with_folders(self):
     _add_dir_entries(self, sdcard_dir, '')
 
 
+def _exclude_current_cb():
+    def _cb(el, context):
+        el.manager.queue_gcode('EXCLUDE_OBJECT CURRENT=1')
+        el.manager.exit()
+        return ''
+    return _cb
+
+
+def _exclude_obj_cb(name):
+    def _cb(el, context):
+        el.manager.queue_gcode('EXCLUDE_OBJECT NAME=%s' % str(name))
+        el.manager.exit()
+        return ''
+    return _cb
+
+
+class MenuExclObjectList(menu_mod.MenuList):
+    def _populate(self):
+        super(MenuExclObjectList, self)._populate()
+        excl = self.manager.printer.lookup_object('exclude_object', None)
+        if excl is None:
+            return
+        status = excl.get_status(None)
+        objects = status.get('objects') or []
+        excluded = set(status.get('excluded_objects') or [])
+        current = status.get('current_object')
+        if current and current not in excluded:
+            self.insert_item(self.manager.menuitem_from(
+                'command', name='Currently: %s' % current,
+                gcode=_exclude_current_cb()))
+        for obj in objects:
+            name = obj.get('name')
+            if not name or name in excluded or name == current:
+                continue
+            self.insert_item(self.manager.menuitem_from(
+                'command', name=name, gcode=_exclude_obj_cb(name)))
+
+
 class SDCardMenuSort:
     def __init__(self, config):
+        _speed_opts.update(
+            step=config.getfloat('speed_step', _speed_opts['step'], above=0.),
+            fast_step=config.getfloat('speed_fast_step',
+                                      _speed_opts['fast_step'], above=0.),
+            min=config.getfloat('speed_min', _speed_opts['min'], above=0.),
+            max=config.getfloat('speed_max', _speed_opts['max'], above=0.),
+            deadzone=config.getint('speed_deadzone',
+                                   _speed_opts['deadzone'], minval=0),
+            deadzone_timeout=config.getfloat(
+                'speed_deadzone_timeout',
+                _speed_opts['deadzone_timeout'], minval=0.))
         menu_mod.MenuVSDList._populate = _populate_with_folders
+        menu_mod.MenuManager.key_event = _key_event
+        menu_mod.menu_items['exclobjlist'] = MenuExclObjectList
         logging.info(
-            "sdcard_menu_sort: SD menu shows folders, newest files first")
+            "sdcard_menu_sort: SD menu shows folders, newest files first; "
+            "wheel adjusts print speed on main screen; "
+            "Cancel Object menu type 'exclobjlist' registered")
 
     def get_status(self, eventtime):
         return {}
