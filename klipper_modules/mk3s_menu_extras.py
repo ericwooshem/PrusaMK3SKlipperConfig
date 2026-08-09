@@ -175,14 +175,12 @@ _speed_opts = {'step': 0.01, 'fast_step': 0.25, 'min': 0.1, 'max': 5.0,
 
 def _adjust_speed(manager, key):
     try:
-        step = (_speed_opts['fast_step'] if key.startswith('fast')
-                else _speed_opts['step'])
         gcmd = manager.printer.lookup_object('gcode_move')
         factor = gcmd.get_status()['speed_factor']
         if key.endswith('down'):
-            factor += step
+            factor += _speed_opts['step']
         else:
-            factor -= step
+            factor -= _speed_opts['step']
         factor = max(_speed_opts['min'], min(_speed_opts['max'], factor))
         manager.queue_gcode("M220 S%d" % round(factor * 100))
     except Exception:
