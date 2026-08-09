@@ -1,23 +1,18 @@
-# MK3S+ LCD menu extras for Klipper.
+# MK3S+ LCD menu extras.
 #
-# One module that bundles features previously shipped as separate extras:
-#
-#   - SD-card file list sorted by modification time (newest first) with
-#     subdirectory navigation from the LCD.
-#   - "Cancel Object" list menu type ("exclobjlist") that lists print objects
-#     and excludes the selected one on click, with the currently printing
-#     object shown at the top.
-#   - Encoder-wheel print speed adjustment on the main screen while printing.
+#   - SD-card file list sorted by date on LCD.
+#   - Folder navigation in Print Files on LCD.
+#   - Cancel Object from LCD.
+#   - Knob print speed adjustment on the main screen while printing.
+#   - Scrolling overflow status-screen text.
 #   - GET_HOST_IP gcode command that resolves the host IP and saves it to
-#     save_variables as 'host_ip' (shown on the LCD: Support > IP). This
-#     avoids needing the third-party gcode_shell_command extension.
+#     save_variables as 'host_ip' (shown on the LCD: Support > IP).
 #
 # Install: copy this file to the host's klippy/extras/ directory
 #   (e.g. /home/pi/klipper/klippy/extras/mk3s_menu_extras.py)
 # and add a [mk3s_menu_extras] section to printer.cfg, ABOVE any
 # [display]/[menu] sections (it registers the "exclobjlist" menu type used by
 # the Cancel Object menu). Then restart Klipper
-# (systemctl restart klipper, or Restart Firmware).
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
@@ -118,11 +113,11 @@ def _add_dir_entries(container, sdcard_dir, relpath):
     entries = [n for n in entries if not n.startswith('.')]
     dirs = sorted(
         [n for n in entries if os.path.isdir(os.path.join(path, n))],
-        key=lambda n: _mtime(os.path.join(path, n)), reverse=True)
+        key=lambda n: (-_mtime(os.path.join(path, n)), n))
     files = sorted(
         [n for n in entries
          if os.path.isfile(os.path.join(path, n)) and _is_gcode(n)],
-        key=lambda n: _mtime(os.path.join(path, n)), reverse=True)
+        key=lambda n: (-_mtime(os.path.join(path, n)), n))
     for d in dirs:
         if not _dir_has_gcode(os.path.join(path, d)):
             continue
@@ -187,6 +182,36 @@ def _adjust_speed(manager, key):
         logging.exception("mk3s_menu_extras: speed adjust failed")
 
 
+_scroll_cfg = {'step': 0.5, 'hold': 1.0}
+_scroll_state = {'text': None, 'start': 0.0}
+
+
+def _display_draw_text(display, orig, row, col, mixed_text, eventtime):
+    # Scroll full-width status-screen text that overflows the row (stock
+    # Klipper only scrolls selected menu items, not the status screen).
+    if (not (display.menu is not None and display.menu.running)
+            and col == 0 and mixed_text and '~' not in mixed_text):
+        width, _height = display.get_dimensions()
+        if len(mixed_text) > width:
+            text = mixed_text
+            step = _scroll_cfg['step']
+            hold_steps = max(1, int(round(_scroll_cfg['hold'] / step)))
+            if _scroll_state['text'] != text:
+                _scroll_state['text'] = text
+                _scroll_state['start'] = eventtime
+            overflow = len(text) - width
+            cycle = overflow + 2 * hold_steps
+            pos = int((eventtime - _scroll_state['start']) / step) % cycle
+            if pos < hold_steps:
+                offset = 0
+            elif pos < hold_steps + overflow:
+                offset = pos - hold_steps
+            else:
+                offset = overflow
+            mixed_text = text[offset:offset + width]
+    return orig(row, col, mixed_text, eventtime)
+
+
 def _key_event(self, key, eventtime):
     # Encoder-wheel print speed adjustment on the main screen while printing.
     if key in _SCROLL_KEYS and not self.running:
@@ -226,6 +251,10 @@ class MK3SMenuExtras:
             deadzone_timeout=config.getfloat(
                 'speed_deadzone_timeout',
                 _speed_opts['deadzone_timeout'], minval=0.))
+        _scroll_cfg.update(
+            step=config.getfloat('scroll_step', _scroll_cfg['step'], above=0.),
+            hold=config.getfloat('scroll_hold', _scroll_cfg['hold'],
+                                 minval=0.))
         self.gcode.register_command(
             'GET_HOST_IP', self.cmd_GET_HOST_IP,
             desc=self.cmd_GET_HOST_IP_help)
@@ -233,9 +262,19 @@ class MK3SMenuExtras:
         menu_mod.MenuVSDList._populate = _populate_with_folders
         menu_mod.menu_items['exclobjlist'] = MenuExclObjectList
         menu_mod.MenuManager.key_event = _key_event
+        self.printer.register_event_handler('klippy:ready', self._handle_ready)
         logging.info(
             "mk3s_menu_extras: sorted SD list with folders, "
-            "Cancel Object list, and wheel speed adjust loaded")
+            "Cancel Object list, wheel speed adjust, and "
+            "status-screen scrolling loaded")
+
+    def _handle_ready(self):
+        display = self.printer.lookup_object('display', None)
+        if display is None:
+            return
+        orig = display.draw_text
+        display.draw_text = lambda row, col, text, eventtime: \
+            _display_draw_text(display, orig, row, col, text, eventtime)
 
     cmd_GET_HOST_IP_help = "Print and save the host IP address"
     def cmd_GET_HOST_IP(self, gcmd):
