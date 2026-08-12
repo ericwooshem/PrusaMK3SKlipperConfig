@@ -7,6 +7,10 @@
 #   - Scrolling overflow status-screen text.
 #   - GET_HOST_IP gcode command that resolves the host IP and saves it to
 #     save_variables as 'host_ip' (shown on the LCD: Support > IP).
+#   - PUSH_MENU gcode command that opens a named LCD menu programmatically
+#     (used to pop the filament-type picker after an fsensor auto-load).
+#   - MENU_BACK gcode command that pops one page back in the LCD menu
+#     (used to auto-return to the main menu when a wizard finishes).
 #
 # Install: copy this file to the host's klippy/extras/ directory
 #   (e.g. /home/pi/klipper/klippy/extras/mk3s_menu_extras.py)
@@ -258,6 +262,12 @@ class MK3SMenuExtras:
         self.gcode.register_command(
             'GET_HOST_IP', self.cmd_GET_HOST_IP,
             desc=self.cmd_GET_HOST_IP_help)
+        self.gcode.register_command(
+            'PUSH_MENU', self.cmd_PUSH_MENU,
+            desc=self.cmd_PUSH_MENU_help)
+        self.gcode.register_command(
+            'MENU_BACK', self.cmd_MENU_BACK,
+            desc=self.cmd_MENU_BACK_help)
         # --- patch the menu system ---
         menu_mod.MenuVSDList._populate = _populate_with_folders
         menu_mod.menu_items['exclobjlist'] = MenuExclObjectList
@@ -290,6 +300,38 @@ class MK3SMenuExtras:
                               % (self._host_ip, self._host_ip))
         else:
             gcmd.respond_info("Unable to determine host IP address.")
+
+    cmd_PUSH_MENU_help = ("Open a named LCD menu (menu namespace, e.g. "
+                          "NAME=\"__main __loadf\")")
+    def cmd_PUSH_MENU(self, gcmd):
+        name = gcmd.get('NAME')
+        menu = self.printer.lookup_object('menu', None)
+        if menu is None:
+            raise gcmd.error("No LCD menu system is available")
+        item = menu.lookup_menuitem(name)
+        if item is None:
+            raise gcmd.error("Unknown menu item '%s'" % (name,))
+        if not isinstance(item, menu_mod.MenuContainer):
+            raise gcmd.error("Menu item '%s' is not a menu container" % (name,))
+        reactor = self.printer.get_reactor()
+        eventtime = reactor.monotonic()
+        if not menu.is_running():
+            menu.begin(eventtime)
+        if not menu.push_container(item):
+            # Rare: a menu item is mid-edit. Don't fail the caller, just skip.
+            gcmd.respond_info("Could not open menu '%s'" % (name,))
+            return
+        menu.display.request_redraw()
+
+    cmd_MENU_BACK_help = "Go back one page in the LCD menu"
+    def cmd_MENU_BACK(self, gcmd):
+        menu = self.printer.lookup_object('menu', None)
+        if menu is None:
+            raise gcmd.error("No LCD menu system is available")
+        if not menu.is_running():
+            return
+        menu.back(True)
+        menu.display.request_redraw()
 
     def get_status(self, eventtime):
         return {'host_ip': self._host_ip}
