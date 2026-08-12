@@ -217,6 +217,62 @@ def _display_draw_text(display, orig, row, col, mixed_text, eventtime):
 
 
 def _key_event(self, key, eventtime):
+    # Long-press the knob (while idle, not printing) to open the axis-move
+    # screen with Z selected and already in edit mode, like Prusa firmware:
+    # turn the knob to move Z, short-press the knob to confirm and return.
+    if key == 'long_click' and not getattr(self, '_z_move_active', False):
+        try:
+            state = self.printer.lookup_object('idle_timeout').state
+        except Exception:
+            state = None
+        if state != 'Printing':
+            was_running = self.is_running()
+            if not was_running:
+                self.begin(eventtime)
+            cur = self.stack_peek()
+            cur_index = None
+            if cur is not None:
+                sel = cur.selected_item()
+                if sel is not None:
+                    cur_index = cur.index_of(sel)
+            self._z_move_prev = (was_running, cur, cur_index)
+            try:
+                move = self.lookup_menuitem(
+                    '__main __settings __move_1mm')
+                self.stack_push(move)
+                zitem = self.lookup_menuitem(
+                    '__main __settings __move_1mm __axis_z')
+                z_index = move.index_of(zitem)
+                if z_index is not None:
+                    move.select_at(z_index)
+                    zitem.start_editing()
+                    self._z_move_active = True
+                else:
+                    # Z not homed yet: stay in the move menu without
+                    # auto-editing so a force move can be used instead.
+                    self._z_move_active = False
+            except Exception:
+                logging.exception('Failed to open Z move menu')
+                if not was_running:
+                    self.exit()
+            self.display.request_redraw()
+            return
+    # Short-press the knob while in the Z move screen: confirm and return.
+    if getattr(self, '_z_move_active', False) and key == 'click':
+        was_running, prev, idx = getattr(
+            self, '_z_move_prev', (True, None, None))
+        self._z_move_active = False
+        if self.stack_size() > 0:
+            self.stack_peek().stop_editing()
+        if was_running:
+            self.back(force=True)
+            if prev is not None and idx is not None:
+                prev.select_at(idx)
+        else:
+            self.stack_pop()
+            self.running = False
+        self.display.request_redraw()
+        return
     # Encoder-wheel print speed adjustment on the main screen while printing.
     if key in _SCROLL_KEYS and not self.running:
         try:
