@@ -32,7 +32,7 @@ class Namespace:
         return 'Namespace(%s)' % ','.join(self.__dict__)
 
 
-def build_printer(state='Idle'):
+def build_printer(state='standby'):
     extruder = Namespace(target=215.0, temperature=210.0)
     bed = Namespace(target=60.0, temperature=59.0)
     fan = Namespace(speed=0.25)
@@ -49,7 +49,8 @@ def build_printer(state='Idle'):
         axis_maximum=Namespace(x=250.0, y=210.0, z=200.0),
         max_accel=6000.0)
     heaters = Namespace(available_heaters=['extruder', 'heater_bed'])
-    idle_timeout = Namespace(state=state)
+    idle_timeout = Namespace(state='Idle')
+    print_stats = Namespace(state=state)
     cfgext = Namespace(max_temp=300.0, max_extrude_only_distance=50)
     cfgbed = Namespace(max_temp=120.0)
     cfg = Namespace(extruder=cfgext, heater_bed=cfgbed)
@@ -63,7 +64,8 @@ def build_printer(state='Idle'):
     printer = Namespace(
         extruder=extruder, heater_bed=bed, fan=fan,
         gcode_move=gcode_move, toolhead=toolhead, heaters=heaters,
-        idle_timeout=idle_timeout, configfile=configfile,
+        idle_timeout=idle_timeout, print_stats=print_stats,
+        configfile=configfile,
         save_variables=save_variables,
         gcode_macro=gcode_macro,
         display_status=Namespace(message='', progress=0.0))
@@ -72,6 +74,7 @@ def build_printer(state='Idle'):
     printer.__dict__['gcode_move'] = gcode_move
     printer.__dict__['toolhead'] = toolhead
     printer.__dict__['idle_timeout'] = idle_timeout
+    printer.__dict__['print_stats'] = print_stats
     printer.__dict__['save_variables'] = save_variables
     printer.__dict__['display_status'] = printer.display_status
     printer.__dict__['gcode_macro'] = gcode_macro
@@ -104,8 +107,8 @@ def main():
     env = make_env()
 
     print('=== SETTINGS menu items (idle / printing) ===')
-    for state in ('Idle', 'Printing'):
-        print('\n--- idle_timeout.state = %s ---' % state)
+    for state in ('standby', 'printing'):
+        print('\n--- print_stats.state = %s ---' % state)
         printer = build_printer(state)
         menu = Namespace(ns='__main __settings', input=0.0, eventtime=0.0)
         ctx = {'printer': printer, 'menu': menu}
