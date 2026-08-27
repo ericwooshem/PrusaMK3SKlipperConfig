@@ -5,6 +5,8 @@ This repo is based on [charminULTRA/Klipper-Input-Shaping-MK3S-Upgrade](https://
 
 **Warning:** I increased machine limits and driver current. Use with caution.
 
+There are still some bugs and visual glitches, but nothing too serious.
+
 # Prusa MK3S+ Klipper Config
 
 A complete Klipper configuration for the **Original Prusa i3 MK3S+** focused on performance while aiming to replicate the familiar stock Prusa interface.
