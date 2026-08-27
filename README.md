@@ -369,6 +369,6 @@ There's a tuned PrusaSlicer configuration in the [`slicer/`](slicer/) folder: `s
 Import it in PrusaSlicer:
 
 1. Open PrusaSlicer.
-2. Go to **Configuration > Import Config** (or **File > Import > Import Config**).
+2. Import config (**File > Import > Import Config**).
 3. Select `slicer/MK3S_Klipper_Config.ini`.
 
