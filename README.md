@@ -3,7 +3,7 @@ I wanted klipper on my MK3S+, but couldn't find any LCD configurations that repl
 The following instructions were 80% written by AI. Hopefully it makes sense.
 This repo is based on [charminULTRA/Klipper-Input-Shaping-MK3S-Upgrade](https://github.com/charminULTRA/Klipper-Input-Shaping-MK3S-Upgrade) and [Mithrandil/klipper-config-prusa-mk2s](https://github.com/Mithrandil/klipper-config-prusa-mk2s/). All changes were made by AI.
 
-I increased machine limits and driver current. Use with caution.
+**Warning:** I increased machine limits and driver current. Use with caution.
 
 # Prusa MK3S+ Klipper Config
 
