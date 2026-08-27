@@ -155,3 +155,193 @@ It should show:
 ```text
 Active: active (running)
 ```
+
+---
+
+# Automatically Mount USB Drives Inside the Prusa G-Code Directory
+
+This setup automatically mounts USB storage devices as folders directly inside:
+
+```text
+/home/pi/printer_data/gcodes/
+```
+
+For example, a USB drive with UUID `A644-39EC` will appear as:
+
+```text
+/home/pi/printer_data/gcodes/A644-39EC/
+```
+
+The resulting directory might look like:
+
+```text
+gcodes/
+├── BENCHY.GCODE
+├── TEST.GCODE
+└── A644-39EC/
+    ├── FROM_USB.GCODE
+    └── MODEL.GCODE
+```
+
+Existing files in `gcodes` remain visible. The USB is mounted only on its own UUID directory.
+
+When the USB is removed, its UUID directory is removed automatically.
+
+## 1. Create the mount helper
+
+Create:
+
+```bash
+sudo nano /usr/local/sbin/usb-mount.sh
+```
+
+Paste:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+ACTION="${1:-}"
+KERNEL="${2:-}"
+
+if [ -z "$ACTION" ] || [ -z "$KERNEL" ]; then
+    echo "Usage: usb-mount.sh mount|unmount sda1" >&2
+    exit 2
+fi
+
+DEV="/dev/$KERNEL"
+STATE_DIR="/run/usb-mount"
+BASE_DIR="/home/pi/printer_data/gcodes"
+
+mkdir -p "$STATE_DIR" "$BASE_DIR"
+
+get_mountpoint() {
+    local uuid label name
+
+    uuid="$(blkid -o value -s UUID "$DEV" 2>/dev/null || true)"
+    label="$(blkid -o value -s LABEL "$DEV" 2>/dev/null || true)"
+
+    if [ -n "$uuid" ]; then
+        name="$uuid"
+    elif [ -n "$label" ]; then
+        name="$label"
+    else
+        name="$KERNEL"
+    fi
+
+    name="$(printf '%s' "$name" | tr -cd 'A-Za-z0-9._-')"
+
+    printf '%s/%s\n' "$BASE_DIR" "$name"
+}
+
+case "$ACTION" in
+    mount)
+        FSTYPE="$(blkid -o value -s TYPE "$DEV" 2>/dev/null || true)"
+
+        if [ -z "$FSTYPE" ]; then
+            echo "No filesystem detected on $DEV" >&2
+            exit 1
+        fi
+
+        MNT="$(get_mountpoint)"
+
+        mkdir -p "$MNT"
+        echo "$MNT" > "$STATE_DIR/$KERNEL"
+
+        case "$FSTYPE" in
+            vfat|exfat|ntfs|ntfs3)
+                UID_PI="$(id -u pi 2>/dev/null || echo 1000)"
+                GID_PI="$(id -g pi 2>/dev/null || echo 1000)"
+
+                mount \
+                    -t "$FSTYPE" \
+                    -o "rw,nosuid,nodev,noatime,uid=$UID_PI,gid=$GID_PI,umask=022" \
+                    "$DEV" "$MNT"
+                ;;
+            *)
+                mount \
+                    -t "$FSTYPE" \
+                    -o rw,nosuid,nodev,noatime \
+                    "$DEV" "$MNT"
+                ;;
+        esac
+        ;;
+
+    unmount)
+        if [ -f "$STATE_DIR/$KERNEL" ]; then
+            MNT="$(cat "$STATE_DIR/$KERNEL")"
+
+            umount "$MNT" 2>/dev/null ||
+                umount -l "$MNT" 2>/dev/null ||
+                true
+
+            rmdir "$MNT" 2>/dev/null || true
+            rm -f "$STATE_DIR/$KERNEL"
+        fi
+        ;;
+
+    *)
+        echo "Usage: usb-mount.sh mount|unmount sda1" >&2
+        exit 2
+        ;;
+esac
+```
+
+Save and make it executable:
+
+```bash
+sudo chmod +x /usr/local/sbin/usb-mount.sh
+```
+
+## 2. Create the systemd service
+
+Create:
+
+```bash
+sudo nano /etc/systemd/system/usb-mount@.service
+```
+
+Paste:
+
+```ini
+[Unit]
+Description=Auto-mount USB storage %I
+BindsTo=dev-%i.device
+After=dev-%i.device
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/usb-mount.sh mount %I
+ExecStop=/usr/local/sbin/usb-mount.sh unmount %I
+```
+
+Reload systemd:
+
+```bash
+sudo systemctl daemon-reload
+```
+
+## 3. Create the udev rule
+
+Create:
+
+```bash
+sudo nano /etc/udev/rules.d/99-usb-mount.rules
+```
+
+Paste:
+
+```udev
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{ID_FS_USAGE}=="filesystem", TAG+="systemd", ENV{SYSTEMD_WANTS}+="usb-mount@%k.service"
+```
+
+Reload:
+
+```bash
+sudo udevadm control --reload-rules
+```
+
+## 4. Test it
+
+Unplug the USB drive, wait a few seconds, and plug it back in. The drive should be mounted in the gcode folder.
