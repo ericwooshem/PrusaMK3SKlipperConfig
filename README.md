@@ -359,3 +359,16 @@ sudo udevadm control --reload-rules
 ## 4. Test it
 
 Unplug the USB drive, wait a few seconds, and plug it back in. The drive should be mounted in the gcode folder.
+
+---
+
+## PrusaSlicer Setup
+
+There's a tuned PrusaSlicer configuration in the [`slicer/`](slicer/) folder: `slicer/MK3S_Klipper_Config.ini`.
+
+Import it in PrusaSlicer:
+
+1. Open PrusaSlicer.
+2. Go to **Configuration > Import Config** (or **File > Import > Import Config**).
+3. Select `slicer/MK3S_Klipper_Config.ini`.
+
