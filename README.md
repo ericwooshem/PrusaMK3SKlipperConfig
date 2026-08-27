@@ -3,6 +3,8 @@ I wanted klipper on my MK3S+, but couldn't find any LCD configurations that repl
 The following instructions were 80% written by AI. Hopefully it makes sense.
 This repo is based on [charminULTRA/Klipper-Input-Shaping-MK3S-Upgrade](https://github.com/charminULTRA/Klipper-Input-Shaping-MK3S-Upgrade) and [Mithrandil/klipper-config-prusa-mk2s](https://github.com/Mithrandil/klipper-config-prusa-mk2s/).
 
+I am assuming you have some experience with klipper, mainsail, and ssh.
+
 All changes were made by AI. (So there are likely nonsense comments in the cfg files. I looked over comments in printer.cfg though, so those ones should make sense.)
 
 **Warning:** I increased machine limits and driver current. Use with caution.
@@ -39,6 +41,14 @@ git clone https://github.com/<your-username>/PrusaMK3SKlipperConfig
 ### 3. Copy the config files (and the `lcdconfig` folder) to `~/printer_data/config/`
 
 ### 4. Copy `klipper_modules/mk3s_menu_extras.py` to `~/klipper/klippy/extras/`
+
+Through ssh, open the file for editing with:
+
+```bash
+sudo nano ~/klipper/klippy/extras/mk3s_menu_extras.py
+```
+
+Paste the contents of `klipper_modules/mk3s_menu_extras.py` from this repo, then save.
 
 ### 5. Tune YOUR printer
 
